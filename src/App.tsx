@@ -292,24 +292,26 @@ function AdminWorkspace({ session, onLogout }: { session: Session; onLogout: () 
   const [selected, setSelected] = useState<Exercise | null>(null);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [catalogError, setCatalogError] = useState('');
+  const [trainerError, setTrainerError] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [createdMessage, setCreatedMessage] = useState('');
   const [deletingId, setDeletingId] = useState('');
   useEffect(() => {
     let alive = true;
+    setTrainerError('');
     api<Trainer[]>(`/api/v1/admin/users?role=trainer&status=active`, session.token)
       .then(rows => { if (alive) setTrainers(rows); })
-      .catch(e => { if (alive) setError(e instanceof Error ? e.message : 'No se pudieron cargar los entrenadores.'); });
+      .catch(e => { if (alive) setTrainerError(e instanceof Error ? e.message : 'No se pudieron cargar los entrenadores.'); });
     return () => { alive = false; };
   }, [session.token]);
   useEffect(() => {
     let alive = true;
-    setLoading(true); setError('');
+    setLoading(true); setCatalogError('');
     const query = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
     api<Exercise[]>(`/api/v1/admin/exercises${query}`, session.token)
       .then(rows => { if (alive) { setExercises(rows); setSelected(current => current ? rows.find(item => item.id === current.id) || null : null); } })
-      .catch(e => { if (alive) setError(e instanceof Error ? e.message : 'No se pudo cargar el catálogo.'); })
+      .catch(e => { if (alive) setCatalogError('No se pudo cargar el catálogo: ' + (e instanceof Error ? e.message : 'Error de red.')); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [search, session.token]);
@@ -319,13 +321,13 @@ function AdminWorkspace({ session, onLogout }: { session: Session; onLogout: () 
   }
   async function deleteExercise(exercise: Exercise) {
     if (!window.confirm('¿Eliminar “' + exercise.name + '” del catálogo? Se borrará de la base de datos.')) return;
-    setDeletingId(exercise.id); setError(''); setCreatedMessage('');
+    setDeletingId(exercise.id); setCatalogError(''); setCreatedMessage('');
     try {
       await api<void>('/api/v1/admin/exercises/' + exercise.id, session.token, { method: 'DELETE' });
       setExercises(current => current.filter(item => item.id !== exercise.id));
       setSelected(current => current?.id === exercise.id ? null : current);
       setCreatedMessage('“' + exercise.name + '” se eliminó del catálogo.');
-    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo eliminar el ejercicio.'); }
+    } catch (e) { setCatalogError('No se pudo eliminar el ejercicio: ' + (e instanceof Error ? e.message : 'Error de red.')); }
     finally { setDeletingId(''); }
   }
   return <div className="app-shell">
@@ -335,16 +337,16 @@ function AdminWorkspace({ session, onLogout }: { session: Session; onLogout: () 
         <button className="primary create-exercise-button" onClick={() => { setShowCreate(value => !value); setCreatedMessage(''); }}><Plus size={16} />{showCreate ? 'Cerrar formulario' : 'Agregar ejercicio'}</button>
         {showCreate && <CreateExercise token={session.token} endpoint="/api/v1/admin/exercises" submitLabel="Guardar ejercicio" onCreated={exercise => { setExercises(current => [exercise, ...current.filter(item => item.id !== exercise.id)]); setSelected(exercise); setSearch(exercise.name); setShowCreate(false); setCreatedMessage(`“${exercise.name}” se agregó al catálogo.`); }} />}
         {createdMessage && <p className="success state"><Check size={15} />{createdMessage}</p>}
-        {loading && <p className="muted state">Cargando ejercicios…</p>}{error && <p className="error state">{error}</p>}
-        {!loading && !error && exercises.length === 0 && <p className="muted state">No hay ejercicios con esa búsqueda.</p>}
+        {loading && <p className="muted state">Cargando ejercicios…</p>}{catalogError && <p className="error state">{catalogError}</p>}
+        {!loading && !catalogError && exercises.length === 0 && <p className="muted state">No hay ejercicios con esa búsqueda.</p>}
         <div className="exercise-list">{exercises.map(item => <div key={item.id} className={"exercise-row " + (selected?.id === item.id ? "active" : "")}><button className="exercise-row-select" onClick={() => setSelected(item)}><span className="exercise-icon"><Dumbbell size={18} /></span><span className="exercise-copy"><b>{item.name}</b><small>{item.muscle_group} · {item.equipment}</small></span>{(item.media_url || (item.trainer_media?.length || 0) > 0) && <span className="dot" title="Tiene videos" />}<ChevronDown className="row-arrow" size={15} /></button><button className="delete-exercise-button" title={"Eliminar " + item.name} aria-label={"Eliminar " + item.name} disabled={deletingId === item.id} onClick={() => void deleteExercise(item)}><Trash2 size={16} /></button></div>)}</div>
-      </aside><div className="detail-panel">{selected ? <AdminExerciseEditor key={selected.id} exercise={selected} trainers={trainers} token={session.token} onSaved={updateExercise} /> : <div className="empty-state"><div className="empty-icon"><Video size={28} /></div><h2>Elige un ejercicio</h2><p>Podrás ver el video guardado y editar nombre, grupo muscular, equipo e instrucciones.</p></div>}</div></div>
+      </aside><div className="detail-panel">{selected ? <AdminExerciseEditor key={selected.id} exercise={selected} trainers={trainers} trainerError={trainerError} token={session.token} onSaved={updateExercise} /> : <div className="empty-state"><div className="empty-icon"><Video size={28} /></div><h2>Elige un ejercicio</h2><p>Podrás ver el video guardado y editar nombre, grupo muscular, equipo e instrucciones.</p></div>}</div></div>
       <footer><ShieldCheck size={15} /> Acceso exclusivo para cuentas activas de administrador.</footer>
     </main>
   </div>;
 }
 
-function AdminExerciseEditor({ exercise, trainers, token, onSaved }: { exercise: Exercise; trainers: Trainer[]; token: string; onSaved: (value: Exercise) => void }) {
+function AdminExerciseEditor({ exercise, trainers, trainerError, token, onSaved }: { exercise: Exercise; trainers: Trainer[]; trainerError: string; token: string; onSaved: (value: Exercise) => void }) {
   const [name, setName] = useState(exercise.name);
   const [muscle, setMuscle] = useState(exercise.muscle_group);
   const [equipment, setEquipment] = useState(exercise.equipment);
@@ -402,6 +404,7 @@ function AdminExerciseEditor({ exercise, trainers, token, onSaved }: { exercise:
   const currentVideo = trainerId ? selectedTrainerMedia : null;
   return <section className="recorder-card admin-editor"><div className="recorder-title"><div><p className="eyebrow">EDITAR EJERCICIO</p><h2>{exercise.name}</h2><p className="muted">{exercise.muscle_group} · {exercise.equipment}</p></div><span className="tag">{currentVideo?.media_url ? 'Video guardado' : 'Sin video'}</span></div>
     <label className="trainer-video-select">Entrenador<select value={trainerId} onChange={e => setTrainerId(e.target.value)}><option value="">Elige un entrenador</option>{trainers.map(trainer => <option key={trainer.id} value={trainer.id}>{trainer.first_name} {trainer.last_name}</option>)}</select></label>
+    {trainerError && <p className="error">No se pudieron cargar los entrenadores: {trainerError}</p>}
     {trainerId && <p className="muted">{refreshingMedia ? 'Actualizando enlace del video…' : currentVideo ? `Video de ${currentVideo.trainer_name}` : 'Este entrenador aún no tiene video para este ejercicio.'}</p>}
     <div className="existing-media admin-video">{currentVideo?.media_url ? currentVideo.media_mime?.startsWith('video/') ? <video controls playsInline src={currentVideo.media_url} /> : <img src={currentVideo.media_url} alt={`Demostración de ${exercise.name}`} /> : <div className="empty-video"><Video size={24} />{trainerId ? 'Sin video para este entrenador.' : 'Elige un entrenador para ver su video.'}</div>}</div>
     <label className="upload-replacement">{busy ? 'Guardando…' : 'Elegir video y asignarlo al entrenador'}<input type="file" accept="video/mp4,video/webm,video/quicktime" disabled={busy || !trainerId} onChange={e => { void replaceVideo(e.target.files?.[0]); e.currentTarget.value = ''; }} /></label>
