@@ -215,7 +215,7 @@ function Workspace({ session, onLogout }: { session: Session; onLogout: () => vo
 const MUSCLE_GROUPS = ['Pecho', 'Espalda', 'Hombros', 'Bíceps', 'Tríceps', 'Piernas', 'Cuádriceps', 'Femoral', 'Pierna completa', 'Glúteos', 'Pantorrillas', 'Abdomen', 'Cardio', 'Cuerpo completo'];
 const EQUIPMENT = ['Peso corporal', 'Mancuernas', 'Barra', 'Barra', 'Discos', 'Poleas', 'Máquina', 'Bandas elásticas', 'Kettlebell', 'Otro'];
 
-function CreateExercise({ token, onCreated }: { token: string; onCreated: (exercise: Exercise) => void }) {
+function CreateExercise({ token, endpoint = '/api/v1/trainer/exercises', submitLabel = 'Guardar y grabar video', onCreated }: { token: string; endpoint?: string; submitLabel?: string; onCreated: (exercise: Exercise) => void }) {
   const [name, setName] = useState('');
   const [muscle, setMuscle] = useState(MUSCLE_GROUPS[0]);
   const [equipment, setEquipment] = useState(EQUIPMENT[0]);
@@ -225,7 +225,7 @@ function CreateExercise({ token, onCreated }: { token: string; onCreated: (exerc
   async function submit(event: FormEvent) {
     event.preventDefault(); setError(''); setBusy(true);
     try {
-      const exercise = await api<Exercise>('/api/v1/trainer/exercises', token, {
+      const exercise = await api<Exercise>(endpoint, token, {
         method: 'POST', body: JSON.stringify({ name, muscle_group: muscle, equipment, instructions: instructions.trim() || null }),
       });
       onCreated(exercise);
@@ -240,7 +240,7 @@ function CreateExercise({ token, onCreated }: { token: string; onCreated: (exerc
     <label>Cómo se hace <span className="optional">(opcional, editable)</span><textarea value={instructions} onChange={e => setInstructions(e.target.value)} maxLength={2000} rows={3} placeholder="Escribe los pasos y recomendaciones del ejercicio." /></label>
     <p className="form-note">Después de guardarlo podrás grabar o subir su video. Las series, repeticiones y descanso se configuran al crear la rutina.</p>
     {error && <p className="error">{error}</p>}
-    <button className="primary wide" disabled={busy || name.trim().length < 2}>{busy ? 'Guardando…' : 'Guardar y grabar video'}</button>
+    <button className="primary wide" disabled={busy || name.trim().length < 2}>{busy ? 'Guardando…' : submitLabel}</button>
   </form>;
 }
 
@@ -252,6 +252,8 @@ function AdminWorkspace({ session, onLogout }: { session: Session; onLogout: () 
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
+  const [createdMessage, setCreatedMessage] = useState('');
   useEffect(() => {
     let alive = true;
     api<Trainer[]>(`/api/v1/admin/users?role=trainer&status=active`, session.token)
@@ -277,6 +279,9 @@ function AdminWorkspace({ session, onLogout }: { session: Session; onLogout: () 
     <header className="topbar"><a className="wordmark" href="#"><span className="brand-mark small"><Dumbbell size={19} /></span><b>MUSKL</b><span className="divider" />Administración de ejercicios</a><div className="user-area"><span>{session.user.first_name || 'Administrador'} {session.user.last_name || ''}</span><button className="icon-button" title="Cerrar sesión" onClick={onLogout}><LogOut size={18} /></button></div></header>
     <main className="workspace"><div className="intro"><p className="eyebrow">PANEL DE ADMINISTRACIÓN</p><h1>Catálogo y videos.</h1><p>Consulta las demostraciones y actualiza los datos de cada ejercicio.</p></div>
       <div className="content-grid"><aside className="exercise-panel"><div className="searchbox"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, músculo o equipo" /></div>
+        <button className="primary create-exercise-button" onClick={() => { setShowCreate(value => !value); setCreatedMessage(''); }}><Plus size={16} />{showCreate ? 'Cerrar formulario' : 'Agregar ejercicio'}</button>
+        {showCreate && <CreateExercise token={session.token} endpoint="/api/v1/admin/exercises" submitLabel="Guardar ejercicio" onCreated={exercise => { setExercises(current => [exercise, ...current.filter(item => item.id !== exercise.id)]); setSelected(exercise); setSearch(exercise.name); setShowCreate(false); setCreatedMessage(`“${exercise.name}” se agregó al catálogo.`); }} />}
+        {createdMessage && <p className="success state"><Check size={15} />{createdMessage}</p>}
         {loading && <p className="muted state">Cargando ejercicios…</p>}{error && <p className="error state">{error}</p>}
         {!loading && !error && exercises.length === 0 && <p className="muted state">No hay ejercicios con esa búsqueda.</p>}
         <div className="exercise-list">{exercises.map(item => <button key={item.id} className={`exercise-row ${selected?.id === item.id ? 'active' : ''}`} onClick={() => setSelected(item)}><span className="exercise-icon"><Dumbbell size={18} /></span><span className="exercise-copy"><b>{item.name}</b><small>{item.muscle_group} · {item.equipment}</small></span>{(item.media_url || (item.trainer_media?.length || 0) > 0) && <span className="dot" title="Tiene videos" />}<ChevronDown className="row-arrow" size={15} /></button>)}</div>
