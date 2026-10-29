@@ -72,17 +72,25 @@ function Recorder({ exercise, token, onUploaded }: { exercise: Exercise; token: 
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const [preview, setPreview] = useState('');
+  const [mediaFile, setMediaFile] = useState<Blob | null>(null);
+  const [mediaFilename, setMediaFilename] = useState('');
+  const [mediaSource, setMediaSource] = useState<'camera' | 'gallery' | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
   const [recording, setRecording] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  useEffect(() => {
+    if (!preview) return;
+    return () => URL.revokeObjectURL(preview);
+  }, [preview]);
+
   useEffect(() => () => {
     recorderRef.current?.state === 'recording' && recorderRef.current.stop();
     streamRef.current?.getTracks().forEach(track => track.stop());
-    if (preview) URL.revokeObjectURL(preview);
-  }, [preview]);
+  }, []);
 
   async function openCamera() {
     setError(''); setSuccess('');
@@ -107,6 +115,9 @@ function Recorder({ exercise, token, onUploaded }: { exercise: Exercise; token: 
     recorder.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: mime.split(';')[0] });
       if (preview) URL.revokeObjectURL(preview);
+      setMediaFile(blob);
+      setMediaFilename(`${exercise.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.${blob.type.includes('mp4') ? 'mp4' : 'webm'}`);
+      setMediaSource('camera');
       setPreview(URL.createObjectURL(blob)); setRecording(false);
       stream.getTracks().forEach(track => track.stop()); streamRef.current = null;
       setCameraReady(false);
@@ -115,20 +126,31 @@ function Recorder({ exercise, token, onUploaded }: { exercise: Exercise; token: 
   }
 
   function stopRecording() { recorderRef.current?.stop(); }
-  function retake() { if (preview) URL.revokeObjectURL(preview); setPreview(''); setSuccess(''); void openCamera(); }
+  function clearPreview() {
+    setPreview(''); setMediaFile(null); setMediaFilename(''); setMediaSource(null); setSuccess('');
+  }
+
+  function retake() { clearPreview(); void openCamera(); }
+
+  function chooseGalleryVideo(file?: File) {
+    if (!file) return;
+    setError(''); setSuccess('');
+    if (!file.type.startsWith('video/')) { setError('Selecciona un archivo de video.'); return; }
+    if (file.size > 50 * 1024 * 1024) { setError('El video supera el límite de 50 MB. Elige uno más corto.'); return; }
+    streamRef.current?.getTracks().forEach(track => track.stop()); streamRef.current = null;
+    setCameraReady(false); setMediaFile(file); setMediaFilename(file.name); setMediaSource('gallery');
+    setPreview(URL.createObjectURL(file));
+  }
 
   async function upload() {
-    if (!preview) return;
-    const response = await fetch(preview);
-    const blob = await response.blob();
-    if (blob.size > 50 * 1024 * 1024) { setError('El video supera el límite de 50 MB. Graba una toma más corta.'); return; }
-    const extension = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('quicktime') ? 'mov' : 'webm';
-    const data = new FormData(); data.append('video', blob, `${exercise.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.${extension}`);
+    if (!mediaFile) return;
+    if (mediaFile.size > 50 * 1024 * 1024) { setError('El video supera el límite de 50 MB. Elige o graba uno más corto.'); return; }
+    const data = new FormData(); data.append('video', mediaFile, mediaFilename || `${exercise.name}.webm`);
     setBusy(true); setError(''); setSuccess('');
     try {
       const saved = await api<{ media_url: string; media_mime: string }>(`/api/v1/trainer/exercises/${exercise.id}/media`, token, { method: 'POST', body: data });
       onUploaded({ ...exercise, ...saved }); setSuccess('Video guardado y disponible en la rutina del socio.');
-      setPreview('');
+      setPreview(''); setMediaFile(null); setMediaFilename(''); setMediaSource(null);
     } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo subir el video.'); }
     finally { setBusy(false); }
   }
@@ -142,10 +164,11 @@ function Recorder({ exercise, token, onUploaded }: { exercise: Exercise; token: 
       {recording && <div className="recording-indicator"><i /> Grabando</div>}
     </div>
     <div className="recorder-actions">
-      {!cameraReady && !preview && <button className="primary" onClick={openCamera}><Camera size={17} /> Activar cámara</button>}
+      {!cameraReady && !preview && <><button className="primary" onClick={openCamera}><Camera size={17} /> Activar cámara</button><button className="secondary" onClick={() => galleryInputRef.current?.click()}><Upload size={16} /> Subir desde galería</button></>}
+      <input ref={galleryInputRef} className="gallery-input" type="file" accept="video/mp4,video/webm,video/quicktime" onChange={e => { chooseGalleryVideo(e.target.files?.[0]); e.currentTarget.value = ''; }} />
       {cameraReady && !recording && <button className="primary" onClick={startRecording}><Video size={17} /> Grabar video</button>}
       {recording && <button className="danger" onClick={stopRecording}><CircleStop size={17} /> Detener grabación</button>}
-      {preview && <><button className="secondary" onClick={retake}><RefreshCw size={16} /> Repetir</button><button className="primary" disabled={busy} onClick={upload}><Upload size={16} /> {busy ? 'Subiendo…' : 'Guardar video'}</button></>}
+      {preview && <><button className="secondary" onClick={mediaSource === 'gallery' ? () => { clearPreview(); galleryInputRef.current?.click(); } : retake}><RefreshCw size={16} /> {mediaSource === 'gallery' ? 'Elegir otro' : 'Repetir'}</button><button className="primary" disabled={busy} onClick={upload}><Upload size={16} /> {busy ? 'Subiendo…' : 'Guardar video'}</button></>}
     </div>
     <p className="hint">MP4, MOV o WebM · máximo 50 MB · se guarda en el almacenamiento privado de MUSKL.</p>
     {error && <p className="error">{error}</p>}{success && <p className="success"><Check size={16} />{success}</p>}
