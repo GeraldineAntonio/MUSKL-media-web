@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Camera, Check, ChevronDown, CircleStop, Dumbbell, LogOut, Plus, RefreshCw, Search, ShieldCheck, Upload, Video } from 'lucide-react';
 
-type User = { role: string; status: string; first_name?: string; last_name?: string };
-type Exercise = { id: string; name: string; muscle_group: string; equipment: string; instructions?: string | null; media_url?: string | null; media_mime?: string | null };
+type User = { id?: string; role: string; status: string; first_name?: string; last_name?: string };
+type Trainer = { id: string; first_name: string; last_name: string };
+type TrainerMedia = { trainer_id: string; trainer_name: string; media_url?: string | null; media_mime?: string | null };
+type Exercise = { id: string; name: string; muscle_group: string; equipment: string; instructions?: string | null; media_url?: string | null; media_mime?: string | null; trainer_media?: TrainerMedia[] };
 type Session = { token: string; user: User };
 const API = (import.meta.env.VITE_MUSKL_API_URL || 'https://muskl-api.onrender.com').replace(/\/$/, '');
 const SESSION_KEY = 'muskl-media-session';
@@ -245,10 +247,18 @@ function CreateExercise({ token, onCreated }: { token: string; onCreated: (exerc
 
 function AdminWorkspace({ session, onLogout }: { session: Session; onLogout: () => void }) {
   const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [trainers, setTrainers] = useState<Trainer[]>([]);
   const [selected, setSelected] = useState<Exercise | null>(null);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  useEffect(() => {
+    let alive = true;
+    api<Trainer[]>(`/api/v1/admin/users?role=trainer&status=active`, session.token)
+      .then(rows => { if (alive) setTrainers(rows); })
+      .catch(e => { if (alive) setError(e instanceof Error ? e.message : 'No se pudieron cargar los entrenadores.'); });
+    return () => { alive = false; };
+  }, [session.token]);
   useEffect(() => {
     let alive = true;
     setLoading(true); setError('');
@@ -269,18 +279,20 @@ function AdminWorkspace({ session, onLogout }: { session: Session; onLogout: () 
       <div className="content-grid"><aside className="exercise-panel"><div className="searchbox"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, músculo o equipo" /></div>
         {loading && <p className="muted state">Cargando ejercicios…</p>}{error && <p className="error state">{error}</p>}
         {!loading && !error && exercises.length === 0 && <p className="muted state">No hay ejercicios con esa búsqueda.</p>}
-        <div className="exercise-list">{exercises.map(item => <button key={item.id} className={`exercise-row ${selected?.id === item.id ? 'active' : ''}`} onClick={() => setSelected(item)}><span className="exercise-icon"><Dumbbell size={18} /></span><span className="exercise-copy"><b>{item.name}</b><small>{item.muscle_group} · {item.equipment}</small></span>{item.media_url && <span className="dot" title="Tiene video" />}<ChevronDown className="row-arrow" size={15} /></button>)}</div>
-      </aside><div className="detail-panel">{selected ? <AdminExerciseEditor key={selected.id} exercise={selected} token={session.token} onSaved={updateExercise} /> : <div className="empty-state"><div className="empty-icon"><Video size={28} /></div><h2>Elige un ejercicio</h2><p>Podrás ver el video guardado y editar nombre, grupo muscular, equipo e instrucciones.</p></div>}</div></div>
+        <div className="exercise-list">{exercises.map(item => <button key={item.id} className={`exercise-row ${selected?.id === item.id ? 'active' : ''}`} onClick={() => setSelected(item)}><span className="exercise-icon"><Dumbbell size={18} /></span><span className="exercise-copy"><b>{item.name}</b><small>{item.muscle_group} · {item.equipment}</small></span>{(item.media_url || (item.trainer_media?.length || 0) > 0) && <span className="dot" title="Tiene videos" />}<ChevronDown className="row-arrow" size={15} /></button>)}</div>
+      </aside><div className="detail-panel">{selected ? <AdminExerciseEditor key={selected.id} exercise={selected} trainers={trainers} token={session.token} onSaved={updateExercise} /> : <div className="empty-state"><div className="empty-icon"><Video size={28} /></div><h2>Elige un ejercicio</h2><p>Podrás ver el video guardado y editar nombre, grupo muscular, equipo e instrucciones.</p></div>}</div></div>
       <footer><ShieldCheck size={15} /> Acceso exclusivo para cuentas activas de administrador.</footer>
     </main>
   </div>;
 }
 
-function AdminExerciseEditor({ exercise, token, onSaved }: { exercise: Exercise; token: string; onSaved: (value: Exercise) => void }) {
+function AdminExerciseEditor({ exercise, trainers, token, onSaved }: { exercise: Exercise; trainers: Trainer[]; token: string; onSaved: (value: Exercise) => void }) {
   const [name, setName] = useState(exercise.name);
   const [muscle, setMuscle] = useState(exercise.muscle_group);
   const [equipment, setEquipment] = useState(exercise.equipment);
   const [instructions, setInstructions] = useState(exercise.instructions || '');
+  const [trainerId, setTrainerId] = useState('');
+  const selectedTrainerMedia = exercise.trainer_media?.find(item => item.trainer_id === trainerId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -288,7 +300,7 @@ function AdminExerciseEditor({ exercise, token, onSaved }: { exercise: Exercise;
     event.preventDefault(); setBusy(true); setError(''); setMessage('');
     try {
       const saved = await api<Exercise>(`/api/v1/admin/exercises/${exercise.id}`, token, { method: 'PUT', body: JSON.stringify({ name, muscle_group: muscle, equipment, instructions: instructions.trim() || null }) });
-      onSaved(saved); setMessage('Datos del ejercicio actualizados.');
+      onSaved({ ...saved, trainer_media: exercise.trainer_media }); setMessage('Datos del ejercicio actualizados.');
     } catch (e) { setError(e instanceof Error ? e.message : 'No se pudieron guardar los cambios.'); }
     finally { setBusy(false); }
   }
@@ -299,14 +311,21 @@ function AdminExerciseEditor({ exercise, token, onSaved }: { exercise: Exercise;
     setBusy(true); setError(''); setMessage('');
     const data = new FormData(); data.append('video', file, file.name);
     try {
-      const saved = await api<Partial<Exercise>>(`/api/v1/admin/exercises/${exercise.id}/media`, token, { method: 'POST', body: data });
-      onSaved({ ...exercise, ...saved }); setMessage('Video actualizado.');
+      if (!trainerId) throw new Error('Elige el entrenador al que se asignará este video.');
+      const saved = await api<Partial<TrainerMedia>>(`/api/v1/admin/exercises/${exercise.id}/media?trainer_id=${encodeURIComponent(trainerId)}`, token, { method: 'POST', body: data });
+      const trainer = trainers.find(item => item.id === trainerId);
+      const trainerMedia = { trainer_id: trainerId, trainer_name: trainer ? `${trainer.first_name} ${trainer.last_name}`.trim() : 'Entrenador', ...saved };
+      const updated = { ...exercise, trainer_media: [...(exercise.trainer_media || []).filter(item => item.trainer_id !== trainerId), trainerMedia] };
+      onSaved(updated); setMessage(`Video asignado a ${trainerMedia.trainer_name}.`);
     } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo actualizar el video.'); }
     finally { setBusy(false); }
   }
-  return <section className="recorder-card admin-editor"><div className="recorder-title"><div><p className="eyebrow">EDITAR EJERCICIO</p><h2>{exercise.name}</h2><p className="muted">{exercise.muscle_group} · {exercise.equipment}</p></div><span className="tag">{exercise.media_url ? 'Video guardado' : 'Sin video'}</span></div>
-    <div className="existing-media admin-video">{exercise.media_url ? exercise.media_mime?.startsWith('video/') ? <video controls playsInline src={exercise.media_url} /> : <img src={exercise.media_url} alt={`Demostración de ${exercise.name}`} /> : <div className="empty-video"><Video size={24} />Este ejercicio todavía no tiene video.</div>}</div>
-    <label className="upload-replacement">{busy ? 'Guardando…' : 'Grabar desde la herramienta de entrenador o elegir video para reemplazar'}<input type="file" accept="video/mp4,video/webm,video/quicktime" disabled={busy} onChange={e => { void replaceVideo(e.target.files?.[0]); e.currentTarget.value = ''; }} /></label>
+  const currentVideo = trainerId ? selectedTrainerMedia : null;
+  return <section className="recorder-card admin-editor"><div className="recorder-title"><div><p className="eyebrow">EDITAR EJERCICIO</p><h2>{exercise.name}</h2><p className="muted">{exercise.muscle_group} · {exercise.equipment}</p></div><span className="tag">{currentVideo?.media_url ? 'Video guardado' : 'Sin video'}</span></div>
+    <label className="trainer-video-select">Entrenador<select value={trainerId} onChange={e => setTrainerId(e.target.value)}><option value="">Elige un entrenador</option>{trainers.map(trainer => <option key={trainer.id} value={trainer.id}>{trainer.first_name} {trainer.last_name}</option>)}</select></label>
+    {trainerId && <p className="muted">{currentVideo ? `Video de ${currentVideo.trainer_name}` : 'Este entrenador aún no tiene video para este ejercicio.'}</p>}
+    <div className="existing-media admin-video">{currentVideo?.media_url ? currentVideo.media_mime?.startsWith('video/') ? <video controls playsInline src={currentVideo.media_url} /> : <img src={currentVideo.media_url} alt={`Demostración de ${exercise.name}`} /> : <div className="empty-video"><Video size={24} />{trainerId ? 'Sin video para este entrenador.' : 'Elige un entrenador para ver su video.'}</div>}</div>
+    <label className="upload-replacement">{busy ? 'Guardando…' : 'Elegir video y asignarlo al entrenador'}<input type="file" accept="video/mp4,video/webm,video/quicktime" disabled={busy || !trainerId} onChange={e => { void replaceVideo(e.target.files?.[0]); e.currentTarget.value = ''; }} /></label>
     <form className="create-exercise-form admin-form" onSubmit={save}>
       <label>Nombre<input value={name} onChange={e => setName(e.target.value)} maxLength={120} required /></label>
       <label>Grupo muscular<select value={muscle} onChange={e => setMuscle(e.target.value)}>{MUSCLE_GROUPS.map(value => <option key={value}>{value}</option>)}</select></label>
