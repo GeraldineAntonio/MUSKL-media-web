@@ -292,8 +292,28 @@ function AdminExerciseEditor({ exercise, trainers, token, onSaved }: { exercise:
   const [equipment, setEquipment] = useState(exercise.equipment);
   const [instructions, setInstructions] = useState(exercise.instructions || '');
   const [trainerId, setTrainerId] = useState('');
-  const selectedTrainerMedia = exercise.trainer_media?.find(item => item.trainer_id === trainerId);
+  const [trainerMedia, setTrainerMedia] = useState(exercise.trainer_media || []);
+  const [refreshingMedia, setRefreshingMedia] = useState(false);
+  const selectedTrainerMedia = trainerMedia.find(item => item.trainer_id === trainerId);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!trainerId) return;
+    let alive = true;
+    setRefreshingMedia(true);
+    const query = `?search=${encodeURIComponent(exercise.name)}`;
+    api<Exercise[]>(`/api/v1/admin/exercises${query}`, token)
+      .then(rows => {
+        if (!alive) return;
+        const latest = rows.find(item => item.id === exercise.id);
+        if (latest) setTrainerMedia(latest.trainer_media || []);
+      })
+      .catch(e => {
+        if (alive) setError(e instanceof Error ? e.message : 'No se pudo cargar el video del entrenador.');
+      })
+      .finally(() => { if (alive) setRefreshingMedia(false); });
+    return () => { alive = false; };
+  }, [exercise.id, exercise.name, token, trainerId]);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   async function save(event: FormEvent) {
@@ -316,6 +336,7 @@ function AdminExerciseEditor({ exercise, trainers, token, onSaved }: { exercise:
       const trainer = trainers.find(item => item.id === trainerId);
       const trainerMedia = { trainer_id: trainerId, trainer_name: trainer ? `${trainer.first_name} ${trainer.last_name}`.trim() : 'Entrenador', ...saved };
       const updated = { ...exercise, trainer_media: [...(exercise.trainer_media || []).filter(item => item.trainer_id !== trainerId), trainerMedia] };
+      setTrainerMedia(current => [...current.filter(item => item.trainer_id !== trainerId), trainerMedia]);
       onSaved(updated); setMessage(`Video asignado a ${trainerMedia.trainer_name}.`);
     } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo actualizar el video.'); }
     finally { setBusy(false); }
@@ -323,7 +344,7 @@ function AdminExerciseEditor({ exercise, trainers, token, onSaved }: { exercise:
   const currentVideo = trainerId ? selectedTrainerMedia : null;
   return <section className="recorder-card admin-editor"><div className="recorder-title"><div><p className="eyebrow">EDITAR EJERCICIO</p><h2>{exercise.name}</h2><p className="muted">{exercise.muscle_group} · {exercise.equipment}</p></div><span className="tag">{currentVideo?.media_url ? 'Video guardado' : 'Sin video'}</span></div>
     <label className="trainer-video-select">Entrenador<select value={trainerId} onChange={e => setTrainerId(e.target.value)}><option value="">Elige un entrenador</option>{trainers.map(trainer => <option key={trainer.id} value={trainer.id}>{trainer.first_name} {trainer.last_name}</option>)}</select></label>
-    {trainerId && <p className="muted">{currentVideo ? `Video de ${currentVideo.trainer_name}` : 'Este entrenador aún no tiene video para este ejercicio.'}</p>}
+    {trainerId && <p className="muted">{refreshingMedia ? 'Actualizando enlace del video…' : currentVideo ? `Video de ${currentVideo.trainer_name}` : 'Este entrenador aún no tiene video para este ejercicio.'}</p>}
     <div className="existing-media admin-video">{currentVideo?.media_url ? currentVideo.media_mime?.startsWith('video/') ? <video controls playsInline src={currentVideo.media_url} /> : <img src={currentVideo.media_url} alt={`Demostración de ${exercise.name}`} /> : <div className="empty-video"><Video size={24} />{trainerId ? 'Sin video para este entrenador.' : 'Elige un entrenador para ver su video.'}</div>}</div>
     <label className="upload-replacement">{busy ? 'Guardando…' : 'Elegir video y asignarlo al entrenador'}<input type="file" accept="video/mp4,video/webm,video/quicktime" disabled={busy || !trainerId} onChange={e => { void replaceVideo(e.target.files?.[0]); e.currentTarget.value = ''; }} /></label>
     <form className="create-exercise-form admin-form" onSubmit={save}>
