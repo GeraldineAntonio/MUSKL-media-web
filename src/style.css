@@ -18,3 +18,19 @@
 .gallery-input{display:none}
 
 .trainer-video-select{display:block;margin:14px 0 8px;color:#c4bec2;font-size:12px}.trainer-video-select select{display:block;width:100%;margin-top:6px;padding:11px;border:1px solid #403b40;border-radius:9px;background:#121113;color:#fff;font:inherit}.trainer-video-select select:focus{border-color:#ed5268;outline:none}
+
+.exercise-row{padding:0;gap:4px}
+.exercise-row-select{display:flex;align-items:center;gap:10px;min-width:0;flex:1;padding:11px 6px 11px 9px;text-align:left;background:transparent;border-radius:12px}
+.delete-exercise-button{display:grid;place-items:center;flex:none;width:34px;height:34px;margin-right:4px;border-radius:9px;background:transparent;color:#a49ba2}
+.delete-exercise-button:hover{background:#4a2029;color:#ff8a9a}
+.instruction-steps{margin:12px 0}
+.instruction-steps-heading{display:grid;gap:3px;margin:10px 0;color:#c4bec2;font-size:11px}
+.instruction-steps-heading span{color:#908990;font-size:10px;font-weight:400}
+.instruction-step{display:flex;align-items:flex-start;gap:5px}
+.instruction-step label{min-width:0;flex:1}
+.instruction-step label span{display:block;color:#c4bec2;font-size:11px;font-weight:700}
+.instruction-step textarea{resize:vertical;line-height:1.45}
+.remove-step-button{margin-top:23px;color:#9b929a}
+.remove-step-button:hover{background:#4a2029;color:#ff8a9a}
+.add-step-button{padding:8px 11px;font-size:11px}
+.instruction-steps>.error{margin:8px 0;font-size:11px}
