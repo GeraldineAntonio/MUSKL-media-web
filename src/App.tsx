@@ -59,7 +59,7 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
     <h1>Videos para<br /><span>cada ejercicio.</span></h1>
     <p className="lead">Graba una demostración con tu cámara y quedará vinculada al catálogo de ejercicios de MUSKL.</p>
     <form className="login-card" onSubmit={submit}>
-      <label>Correo o número de socio<input autoComplete="username" value={identifier} onChange={e => setIdentifier(e.target.value)} required /></label>
+      <label>Correo electrónico<input autoComplete="username" value={identifier} onChange={e => setIdentifier(e.target.value)} required /></label>
       <label>Contraseña<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required /></label>
       {error && <p className="error">{error}</p>}
       <button className="primary wide" disabled={busy}>{busy ? 'Conectando…' : 'Iniciar sesión'}</button>
