@@ -212,8 +212,8 @@ function Workspace({ session, onLogout }: { session: Session; onLogout: () => vo
   </div>;
 }
 
-const MUSCLE_GROUPS = ['Pecho', 'Espalda', 'Hombros', 'Bíceps', 'Tríceps', 'Piernas', 'Cuádriceps', 'Femoral', 'Piernas y glúteos', 'Glúteos', 'Pantorrillas', 'Abdomen', 'Cardio', 'Cuerpo completo'];
-const EQUIPMENT = ['Peso corporal', 'Mancuernas', 'Barra', 'Barra y discos', 'Discos', 'Poleas', 'Máquina', 'Bandas elásticas', 'Kettlebell', 'Otro'];
+const MUSCLE_GROUPS = ['Pecho', 'Espalda', 'Hombros', 'Bíceps', 'Tríceps', 'Piernas', 'Cuádriceps', 'Femoral', 'Pierna completa', 'Glúteos', 'Pantorrillas', 'Abdomen', 'Cardio', 'Cuerpo completo'];
+const EQUIPMENT = ['Peso corporal', 'Mancuernas', 'Barra', 'Barra', 'Discos', 'Poleas', 'Máquina', 'Bandas elásticas', 'Kettlebell', 'Otro'];
 
 function CreateExercise({ token, onCreated }: { token: string; onCreated: (exercise: Exercise) => void }) {
   const [name, setName] = useState('');
