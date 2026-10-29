@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Camera, Check, ChevronDown, CircleStop, Dumbbell, LogOut, Plus, RefreshCw, Search, ShieldCheck, Upload, Video } from 'lucide-react';
+import { Camera, Check, ChevronDown, CircleStop, Dumbbell, LogOut, Plus, RefreshCw, Search, ShieldCheck, Trash2, Upload, Video, X } from 'lucide-react';
 
 type User = { id?: string; role: string; status: string; first_name?: string; last_name?: string };
 type Trainer = { id: string; first_name: string; last_name: string };
@@ -185,6 +185,7 @@ function Workspace({ session, onLogout }: { session: Session; onLogout: () => vo
   const [error, setError] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [createdMessage, setCreatedMessage] = useState('');
+  const [deletingId, setDeletingId] = useState('');
   useEffect(() => {
     let alive = true;
     setLoading(true); setError('');
@@ -195,6 +196,17 @@ function Workspace({ session, onLogout }: { session: Session; onLogout: () => vo
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [search, session.token]);
+  async function deleteExercise(exercise: Exercise) {
+    if (!window.confirm('¿Eliminar “' + exercise.name + '” del catálogo? Se borrará de la base de datos.')) return;
+    setDeletingId(exercise.id); setError(''); setCreatedMessage('');
+    try {
+      await api<void>('/api/v1/trainer/exercises/' + exercise.id, session.token, { method: 'DELETE' });
+      setExercises(current => current.filter(item => item.id !== exercise.id));
+      setSelected(current => current?.id === exercise.id ? null : current);
+      setCreatedMessage('“' + exercise.name + '” se eliminó del catálogo.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo eliminar el ejercicio.'); }
+    finally { setDeletingId(''); }
+  }
   return <div className="app-shell">
     <header className="topbar"><a className="wordmark" href="#"><span className="brand-mark small"><Dumbbell size={19} /></span><b>MUSKL</b><span className="divider" />Videos de ejercicios</a><div className="user-area"><span>{session.user.first_name || 'Entrenador'} {session.user.last_name || ''}</span><button className="icon-button" title="Cerrar sesión" onClick={onLogout}><LogOut size={18} /></button></div></header>
     <main className="workspace"><div className="intro"><p className="eyebrow">CATÁLOGO MUSKL</p><h1>Graba una demostración.</h1><p>El video se asociará al ejercicio y se mostrará en la rutina del socio.</p></div>
@@ -204,7 +216,7 @@ function Workspace({ session, onLogout }: { session: Session; onLogout: () => vo
         {createdMessage && <p className="success state"><Check size={15} />{createdMessage}</p>}
         {loading && <p className="muted state">Cargando ejercicios…</p>}{error && <p className="error state">{error}</p>}
         {!loading && !error && exercises.length === 0 && <p className="muted state">No hay ejercicios con esa búsqueda.</p>}
-        <div className="exercise-list">{exercises.map(item => <button key={item.id} className={`exercise-row ${selected?.id === item.id ? 'active' : ''}`} onClick={() => setSelected(item)}><span className="exercise-icon"><Dumbbell size={18} /></span><span className="exercise-copy"><b>{item.name}</b><small>{item.muscle_group} · {item.equipment}</small></span>{item.media_url && <span className="dot" title="Tiene multimedia" />}<ChevronDown className="row-arrow" size={15} /></button>)}</div>
+        <div className="exercise-list">{exercises.map(item => <div key={item.id} className={"exercise-row " + (selected?.id === item.id ? "active" : "")}><button className="exercise-row-select" onClick={() => setSelected(item)}><span className="exercise-icon"><Dumbbell size={18} /></span><span className="exercise-copy"><b>{item.name}</b><small>{item.muscle_group} · {item.equipment}</small></span>{item.media_url && <span className="dot" title="Tiene multimedia" />}<ChevronDown className="row-arrow" size={15} /></button><button className="delete-exercise-button" title={"Eliminar " + item.name} aria-label={"Eliminar " + item.name} disabled={deletingId === item.id} onClick={() => void deleteExercise(item)}><Trash2 size={16} /></button></div>)}</div>
       </aside>
       <div className="detail-panel">{selected ? <Recorder key={selected.id} exercise={selected} token={session.token} onUploaded={saved => { setSelected(saved); setExercises(current => current.map(item => item.id === saved.id ? saved : item)); }} /> : <div className="empty-state"><div className="empty-icon"><Camera size={28} /></div><h2>Elige un ejercicio</h2><p>Selecciona uno del catálogo para abrir la cámara y grabar su demostración.</p></div>}</div></div>
       <footer><ShieldCheck size={15} /> Solo tu cuenta activa de entrenador puede modificar el catálogo.</footer>
@@ -237,7 +249,7 @@ function CreateExercise({ token, endpoint = '/api/v1/trainer/exercises', submitL
     <label>Nombre<input value={name} onChange={e => setName(e.target.value)} maxLength={120} placeholder="Ej. Remo unilateral en polea" required /></label>
     <label>Grupo muscular<select value={muscle} onChange={e => setMuscle(e.target.value)}>{MUSCLE_GROUPS.map(value => <option key={value}>{value}</option>)}</select></label>
     <label>Equipo<select value={equipment} onChange={e => setEquipment(e.target.value)}>{EQUIPMENT.map(value => <option key={value}>{value}</option>)}</select></label>
-    <label>Cómo se hace <span className="optional">(opcional, editable)</span><textarea value={instructions} onChange={e => setInstructions(e.target.value)} maxLength={2000} rows={3} placeholder="Escribe los pasos y recomendaciones del ejercicio." /></label>
+    <InstructionStepsEditor value={instructions} onChange={setInstructions} />
     <p className="form-note">Después de guardarlo podrás grabar o subir su video. Las series, repeticiones y descanso se configuran al crear la rutina.</p>
     {error && <p className="error">{error}</p>}
     <button className="primary wide" disabled={busy || name.trim().length < 2}>{busy ? 'Guardando…' : submitLabel}</button>
@@ -245,6 +257,35 @@ function CreateExercise({ token, endpoint = '/api/v1/trainer/exercises', submitL
 }
 
 
+function readInstructionSteps(value: string): string[] {
+  const lines = value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const steps = lines.map(line => line.replace(/^(?:paso\s*)?\d+\s*[:.)-]\s*/i, '').trim()).filter(Boolean);
+  return steps.length ? steps : [''];
+}
+
+function formatInstructionSteps(steps: string[]): string {
+  return steps.map(step => step.trim()).filter(Boolean)
+    .map((step, index) => 'Paso ' + (index + 1) + ': ' + step).join('\n');
+}
+
+function InstructionStepsEditor({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [steps, setSteps] = useState(() => readInstructionSteps(value));
+  const [error, setError] = useState('');
+  function update(next: string[]) {
+    const formatted = formatInstructionSteps(next);
+    if (formatted.length > 2000) { setError('La descripción no puede superar 2,000 caracteres.'); return; }
+    setError(''); setSteps(next); onChange(formatted);
+  }
+  return <div className="instruction-steps">
+    <div className="instruction-steps-heading"><b>Cómo se hace</b><span>La descripción se guardará con pasos numerados.</span></div>
+    {steps.map((step, index) => <div className="instruction-step" key={index}>
+      <label><span>Paso {index + 1}</span><textarea value={step} onChange={event => update(steps.map((item, i) => i === index ? event.target.value : item))} maxLength={2000} rows={2} placeholder={index === 0 ? 'Ej. Colócate frente al equipo y ajusta la posición.' : 'Describe el siguiente movimiento.'} /></label>
+      <button className="icon-button remove-step-button" type="button" title={'Quitar paso ' + (index + 1)} aria-label={'Quitar paso ' + (index + 1)} onClick={() => update(steps.length === 1 ? [''] : steps.filter((_, i) => i !== index))}><X size={16} /></button>
+    </div>)}
+    <button className="secondary add-step-button" type="button" onClick={() => update([...steps, ''])}><Plus size={15} /> Agregar paso</button>
+    {error && <p className="error">{error}</p>}
+  </div>;
+}
 function AdminWorkspace({ session, onLogout }: { session: Session; onLogout: () => void }) {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [trainers, setTrainers] = useState<Trainer[]>([]);
@@ -254,6 +295,7 @@ function AdminWorkspace({ session, onLogout }: { session: Session; onLogout: () 
   const [error, setError] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [createdMessage, setCreatedMessage] = useState('');
+  const [deletingId, setDeletingId] = useState('');
   useEffect(() => {
     let alive = true;
     api<Trainer[]>(`/api/v1/admin/users?role=trainer&status=active`, session.token)
@@ -275,6 +317,17 @@ function AdminWorkspace({ session, onLogout }: { session: Session; onLogout: () 
     setExercises(current => current.map(item => item.id === saved.id ? saved : item));
     setSelected(saved);
   }
+  async function deleteExercise(exercise: Exercise) {
+    if (!window.confirm('¿Eliminar “' + exercise.name + '” del catálogo? Se borrará de la base de datos.')) return;
+    setDeletingId(exercise.id); setError(''); setCreatedMessage('');
+    try {
+      await api<void>('/api/v1/admin/exercises/' + exercise.id, session.token, { method: 'DELETE' });
+      setExercises(current => current.filter(item => item.id !== exercise.id));
+      setSelected(current => current?.id === exercise.id ? null : current);
+      setCreatedMessage('“' + exercise.name + '” se eliminó del catálogo.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo eliminar el ejercicio.'); }
+    finally { setDeletingId(''); }
+  }
   return <div className="app-shell">
     <header className="topbar"><a className="wordmark" href="#"><span className="brand-mark small"><Dumbbell size={19} /></span><b>MUSKL</b><span className="divider" />Administración de ejercicios</a><div className="user-area"><span>{session.user.first_name || 'Administrador'} {session.user.last_name || ''}</span><button className="icon-button" title="Cerrar sesión" onClick={onLogout}><LogOut size={18} /></button></div></header>
     <main className="workspace"><div className="intro"><p className="eyebrow">PANEL DE ADMINISTRACIÓN</p><h1>Catálogo y videos.</h1><p>Consulta las demostraciones y actualiza los datos de cada ejercicio.</p></div>
@@ -284,7 +337,7 @@ function AdminWorkspace({ session, onLogout }: { session: Session; onLogout: () 
         {createdMessage && <p className="success state"><Check size={15} />{createdMessage}</p>}
         {loading && <p className="muted state">Cargando ejercicios…</p>}{error && <p className="error state">{error}</p>}
         {!loading && !error && exercises.length === 0 && <p className="muted state">No hay ejercicios con esa búsqueda.</p>}
-        <div className="exercise-list">{exercises.map(item => <button key={item.id} className={`exercise-row ${selected?.id === item.id ? 'active' : ''}`} onClick={() => setSelected(item)}><span className="exercise-icon"><Dumbbell size={18} /></span><span className="exercise-copy"><b>{item.name}</b><small>{item.muscle_group} · {item.equipment}</small></span>{(item.media_url || (item.trainer_media?.length || 0) > 0) && <span className="dot" title="Tiene videos" />}<ChevronDown className="row-arrow" size={15} /></button>)}</div>
+        <div className="exercise-list">{exercises.map(item => <div key={item.id} className={"exercise-row " + (selected?.id === item.id ? "active" : "")}><button className="exercise-row-select" onClick={() => setSelected(item)}><span className="exercise-icon"><Dumbbell size={18} /></span><span className="exercise-copy"><b>{item.name}</b><small>{item.muscle_group} · {item.equipment}</small></span>{(item.media_url || (item.trainer_media?.length || 0) > 0) && <span className="dot" title="Tiene videos" />}<ChevronDown className="row-arrow" size={15} /></button><button className="delete-exercise-button" title={"Eliminar " + item.name} aria-label={"Eliminar " + item.name} disabled={deletingId === item.id} onClick={() => void deleteExercise(item)}><Trash2 size={16} /></button></div>)}</div>
       </aside><div className="detail-panel">{selected ? <AdminExerciseEditor key={selected.id} exercise={selected} trainers={trainers} token={session.token} onSaved={updateExercise} /> : <div className="empty-state"><div className="empty-icon"><Video size={28} /></div><h2>Elige un ejercicio</h2><p>Podrás ver el video guardado y editar nombre, grupo muscular, equipo e instrucciones.</p></div>}</div></div>
       <footer><ShieldCheck size={15} /> Acceso exclusivo para cuentas activas de administrador.</footer>
     </main>
@@ -356,7 +409,7 @@ function AdminExerciseEditor({ exercise, trainers, token, onSaved }: { exercise:
       <label>Nombre<input value={name} onChange={e => setName(e.target.value)} maxLength={120} required /></label>
       <label>Grupo muscular<select value={muscle} onChange={e => setMuscle(e.target.value)}>{MUSCLE_GROUPS.map(value => <option key={value}>{value}</option>)}</select></label>
       <label>Equipo<select value={equipment} onChange={e => setEquipment(e.target.value)}>{EQUIPMENT.map(value => <option key={value}>{value}</option>)}</select></label>
-      <label>Instrucciones<textarea value={instructions} onChange={e => setInstructions(e.target.value)} maxLength={2000} rows={4} placeholder="Indicaciones para realizar el ejercicio." /></label>
+      <InstructionStepsEditor value={instructions} onChange={setInstructions} />
       {error && <p className="error">{error}</p>}{message && <p className="success"><Check size={16} />{message}</p>}
       <button className="primary" disabled={busy || name.trim().length < 2}>{busy ? 'Guardando…' : 'Guardar cambios'}</button>
     </form>
