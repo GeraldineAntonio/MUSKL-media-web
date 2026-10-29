@@ -14,3 +14,5 @@
 .exercise-panel.creating{overflow-y:auto}
 .exercise-panel.creating .exercise-list{min-height:90px}
 .admin-editor .existing-media{min-height:180px}.admin-video video,.admin-video img{width:100%;max-height:420px;object-fit:contain}.empty-video{min-height:180px;display:flex;align-items:center;justify-content:center;gap:10px;color:#918a91;font-size:12px}.upload-replacement{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin:12px 0;padding:12px;border:1px dashed #514952;border-radius:11px;color:#c4bec2;font-size:11px;text-align:center}.upload-replacement input{max-width:100%;font-size:11px}.admin-form{margin:14px 0 0}.admin-form .primary{min-width:160px}
+
+.gallery-input{display:none}
